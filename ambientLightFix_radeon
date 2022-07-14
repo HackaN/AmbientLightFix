@@ -1,0 +1,94 @@
+#!/bin/bash
+
+max=$(cat /sys/class/backlight/radeon_bl0/max_brightness)
+sensitivity=$((max/90))
+treshold=$((max/4))
+panOut=$((sensitivity/4))
+min=$((max/10))
+delay=2
+updated=1
+lastSet=0
+justeringUpp=0
+justeringNer=0
+
+while [ 1 ]
+do
+
+        
+        while [ $updated -gt 0 ]
+        do
+                updated=0
+                backlight=$(cat /sys/class/backlight/radeon_bl0/brightness)
+                sensor=$(cat /sys/bus/iio/devices/iio:device0/in_illuminance_raw)
+#kommentera bort nedan sedan. clear används bara för att inte mixa in tidigare loopars utmatningar
+		#clear
+		#echo "SensorRaw :" $sensor
+		if [ $sensor -lt 0 ]
+			then
+				sensor=1
+		fi
+                target=$backlight
+#kommentera bort nedan sedan
+		#echo "sensorMinst0 :" $sensor
+		#echo "target :" $target ", min: " $min ", max: " $max
+		
+		if [[ $target -gt $lastSet && $lastSet != 0 ]]
+			then $justeringUpp = $((target - lastSet))
+			     $justeringNer = 0
+			else if [[ $target -lt $lastSet && $lastSet != 0 ]]
+				then $justeringNer = $((lastSet - target))
+			     	     $justeringUpp = 0
+			else
+				     $justeringNer = 0
+				     $justeringUpp = 0
+			fi
+		fi
+#kommentera bort nedan sedan
+		#echo "justeringNer: " $justeringNer
+		#echo "justeringUpp: " $justeringUpp
+#Inleder med att försäkra oss om att vi får som minst minsta ljusstyrka
+                if [ $sensor -lt $treshold ]
+                then
+                    sensor=$(((sensor*panOut)+min))
+                fi
+
+
+
+                if [ $sensor -gt $((backlight+sensitivity)) ]
+                then
+                        updated=1
+                        target=$((target+(sensitivity/2)+justeringUpp-justeringNer))
+			echo "Steg: sensorGreater"
+                fi
+
+
+                if [ $sensor -lt $((backlight-sensitivity)) ]
+                then
+                        updated=1
+                        target=$((target-(sensitivity/2)+justeringUpp-justeringNer))
+			echo "Steg: sensorLess"
+                fi
+
+
+                if [ $target -gt $max ]
+                then
+                        target=$max
+			#echo "Stoppad till: targetMax"
+                fi
+
+                if [ $target -lt 1 ]
+                then
+                        target=$((min+justeringUpp-justeringNer))
+			#echo "Stoppad till: targetMin"
+                fi
+
+                if [ $updated -gt 0 ]
+                then
+                        echo $target > /sys/class/backlight/radeon_bl0/brightness
+			lastSet=$target
+			#echo "lastSet: " $lastSet
+                fi
+		sleep $delay
+        done
+        
+done
